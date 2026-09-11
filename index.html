@@ -298,14 +298,19 @@ const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecogni
 let recognition = null;
 let listening = false;
 
+let lastInterim = '';
+let gotFinal = false;
+
 if(SpeechRecognition){
   recognition = new SpeechRecognition();
   recognition.lang = 'en-GB';
-  recognition.interimResults = false;
+  recognition.interimResults = true;
   recognition.maxAlternatives = 1;
 
   recognition.onstart = () => {
     listening = true;
+    lastInterim = '';
+    gotFinal = false;
     micBtn.classList.add('listening');
     ring1.classList.add('animate');
     ring2.classList.add('animate');
@@ -313,11 +318,24 @@ if(SpeechRecognition){
     statusEl.textContent = 'Listening… speak now';
   };
 
+  recognition.onspeechstart = () => {
+    statusEl.textContent = 'Hearing you…';
+  };
+
   recognition.onend = () => {
     listening = false;
     micBtn.classList.remove('listening');
     ring1.classList.remove('animate');
     ring2.classList.remove('animate');
+    // Fallback: if we captured interim text but never got a final result, use it anyway
+    if(!gotFinal && lastInterim.trim()){
+      const transcript = lastInterim.trim();
+      lastInterim = '';
+      addBubble(transcript, 'user');
+      sendToTutor(transcript);
+    } else if(!gotFinal){
+      statusEl.textContent = "Didn't catch any words — try again, a bit closer to the mic";
+    }
   };
 
   recognition.onerror = (e) => {
@@ -325,9 +343,22 @@ if(SpeechRecognition){
   };
 
   recognition.onresult = (event) => {
-    const transcript = event.results[0][0].transcript;
-    addBubble(transcript, 'user');
-    sendToTutor(transcript);
+    let interim = '';
+    for(let i = event.resultIndex; i < event.results.length; i++){
+      const res = event.results[i];
+      if(res.isFinal){
+        gotFinal = true;
+        const transcript = res[0].transcript;
+        addBubble(transcript, 'user');
+        sendToTutor(transcript);
+      } else {
+        interim += res[0].transcript;
+      }
+    }
+    if(interim){
+      lastInterim = interim;
+      statusEl.textContent = '"' + interim + '"';
+    }
   };
 } else {
   statusEl.textContent = 'Speech recognition not supported in this browser.';
