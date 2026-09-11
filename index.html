@@ -507,7 +507,10 @@ async function speakWithGemini(text){
   });
   const data = await res.json();
   const part = data?.candidates?.[0]?.content?.parts?.[0];
-  if(!part?.inlineData?.data){ throw new Error('no audio returned'); }
+  if(!part?.inlineData?.data){
+    const debugInfo = data.error ? data.error.message : JSON.stringify(data).slice(0, 250);
+    throw new Error(debugInfo);
+  }
 
   let sampleRate = 24000;
   const mime = part.inlineData.mimeType || '';
