@@ -176,7 +176,7 @@
     margin:0;
   }
   #setup a{color:var(--accent);}
-  #setup input{
+  #setup input, #setup select{
     background:var(--surface);
     border:1px solid var(--line);
     color:var(--text);
@@ -206,6 +206,9 @@
     <p>Paste your free Gemini API key below. It's saved only on this device — never uploaded anywhere.</p>
     <p>Don't have one yet? Get it free at <a href="https://aistudio.google.com" target="_blank">aistudio.google.com</a> → "Get API key".</p>
     <input id="keyInput" type="text" placeholder="Paste your API key here" autocapitalize="off" autocorrect="off">
+    <p style="margin-top:6px;">Voice for your tutor:</p>
+    <select id="voiceSelect"></select>
+    <button id="testVoice" type="button" style="background:var(--surface-alt);color:var(--text);border:1px solid var(--line);">Test this voice</button>
     <button id="saveKey">Save and start</button>
   </div>
 
@@ -386,12 +389,46 @@ micBtn.addEventListener('click', () => {
 
 // ---- Text-to-speech (British voice) ----
 let cachedVoices = [];
-function loadVoices(){
+const voiceSelect = document.getElementById('voiceSelect');
+const testVoiceBtn = document.getElementById('testVoice');
+
+function populateVoiceList(){
   cachedVoices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+  const english = cachedVoices.filter(v => v.lang && v.lang.startsWith('en'));
+  const savedURI = localStorage.getItem('ttsVoiceURI');
+  voiceSelect.innerHTML = '';
+  english.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v.voiceURI;
+    opt.textContent = v.name + ' (' + v.lang + ')';
+    if(v.voiceURI === savedURI) opt.selected = true;
+    voiceSelect.appendChild(opt);
+  });
+  // Default-select the first en-GB voice if nothing saved yet
+  if(!savedURI){
+    const firstGB = english.find(v => v.lang === 'en-GB');
+    if(firstGB) voiceSelect.value = firstGB.voiceURI;
+  }
 }
 if(window.speechSynthesis){
-  loadVoices();
-  window.speechSynthesis.onvoiceschanged = loadVoices;
+  populateVoiceList();
+  window.speechSynthesis.onvoiceschanged = populateVoiceList;
+}
+voiceSelect.addEventListener('change', () => {
+  localStorage.setItem('ttsVoiceURI', voiceSelect.value);
+});
+testVoiceBtn.addEventListener('click', () => {
+  localStorage.setItem('ttsVoiceURI', voiceSelect.value);
+  speak("Hello! This is what I'll sound like.");
+});
+
+function getSelectedVoice(){
+  const savedURI = localStorage.getItem('ttsVoiceURI');
+  if(savedURI){
+    const match = cachedVoices.find(v => v.voiceURI === savedURI);
+    if(match) return match;
+  }
+  return cachedVoices.find(v => v.lang === 'en-GB') || cachedVoices.find(v => v.lang && v.lang.startsWith('en-GB'));
 }
 
 function speak(text){
@@ -401,9 +438,8 @@ function speak(text){
   }
   window.speechSynthesis.cancel(); // clear any stuck queue first
   const utter = new SpeechSynthesisUtterance(text);
-  const voices = cachedVoices.length ? cachedVoices : window.speechSynthesis.getVoices();
-  const british = voices.find(v => v.lang === 'en-GB') || voices.find(v => v.lang && v.lang.startsWith('en-GB'));
-  if(british) utter.voice = british;
+  const chosen = getSelectedVoice();
+  if(chosen) utter.voice = chosen;
   utter.lang = 'en-GB';
   utter.rate = 0.98;
   utter.volume = 1;
@@ -411,7 +447,7 @@ function speak(text){
   utter.onstart = () => { statusEl.textContent = '🔊 Speaking…'; };
   utter.onend = () => { statusEl.textContent = ''; };
   utter.onerror = (e) => {
-    addBubble('Voice error: ' + e.error + ' (voices available: ' + voices.length + ')', 'system');
+    addBubble('Voice error: ' + e.error, 'system');
   };
 
   window.speechSynthesis.speak(utter);
