@@ -211,7 +211,7 @@
     <button id="testVoice" type="button" style="background:var(--surface-alt);color:var(--text);border:1px solid var(--line);">Test this voice</button>
     <label style="display:flex;align-items:center;gap:8px;color:var(--text-muted);font-size:14px;margin-top:4px;">
       <input type="checkbox" id="useAiVoice" style="width:auto;">
-      Use high-quality AI voice (Google — only ~10 replies/day free, may run out)
+      Use natural AI voice (downloads once, ~100MB, then unlimited & offline)
     </label>
     <button id="saveKey">Save and start</button>
   </div>
@@ -446,9 +446,9 @@ function getSelectedVoice(){
 
 function speak(text){
   const useAi = localStorage.getItem('useAiVoice') === 'true';
-  if(useAi && apiKey){
-    speakWithGemini(text).catch((err) => {
-      addBubble('AI voice unavailable (' + err.message + ') — using standard voice instead.', 'system');
+  if(useAi){
+    speakWithKokoro(text).catch((err) => {
+      addBubble('Natural voice unavailable (' + err.message + ') — using standard voice instead.', 'system');
       speakBrowser(text);
     });
   } else {
@@ -488,6 +488,36 @@ function pcmBase64ToWavBlob(base64Data, sampleRate){
   wavBytes.set(pcmBytes, header.byteLength);
   return new Blob([wavBytes], {type:'audio/wav'});
 }
+
+async function speakWithKokoro(text){
+  if(!kokoroInstance){
+    if(!kokoroLoading){
+      statusEl.textContent = '🔊 Downloading natural voice (one-time, ~100MB)…';
+      kokoroLoading = (async () => {
+        const { KokoroTTS } = await import('https://esm.sh/kokoro-js');
+        const device = ('gpu' in navigator) ? 'webgpu' : 'wasm';
+        const tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
+          dtype: 'q8',
+          device: device
+        });
+        kokoroInstance = tts;
+        return tts;
+      })();
+    }
+    await kokoroLoading;
+  }
+  statusEl.textContent = '🔊 Generating voice…';
+  const audioData = await kokoroInstance.generate(text, { voice: 'bf_emma' });
+  if(!audioData || !audioData.toBlob){ throw new Error('unexpected audio format'); }
+  const blob = audioData.toBlob();
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  statusEl.textContent = '🔊 Speaking…';
+  audio.onended = () => { statusEl.textContent = ''; URL.revokeObjectURL(url); };
+  await audio.play();
+}
+let kokoroInstance = null;
+let kokoroLoading = null;
 
 async function speakWithGemini(text){
   statusEl.textContent = '🔊 Preparing voice…';
