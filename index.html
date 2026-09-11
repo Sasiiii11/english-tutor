@@ -364,7 +364,17 @@ if(SpeechRecognition){
   statusEl.textContent = 'Speech recognition not supported in this browser.';
 }
 
+let audioUnlocked = false;
+function unlockAudio(){
+  if(audioUnlocked || !window.speechSynthesis) return;
+  const silent = new SpeechSynthesisUtterance(' ');
+  silent.volume = 0;
+  window.speechSynthesis.speak(silent);
+  audioUnlocked = true;
+}
+
 micBtn.addEventListener('click', () => {
+  unlockAudio(); // must happen directly inside the tap, before anything async
   if(!apiKey){ checkSetup(); return; }
   if(!recognition){ return; }
   if(listening){
