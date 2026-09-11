@@ -209,6 +209,10 @@
     <p style="margin-top:6px;">Voice for your tutor:</p>
     <select id="voiceSelect"></select>
     <button id="testVoice" type="button" style="background:var(--surface-alt);color:var(--text);border:1px solid var(--line);">Test this voice</button>
+    <label style="display:flex;align-items:center;gap:8px;color:var(--text-muted);font-size:14px;margin-top:4px;">
+      <input type="checkbox" id="useAiVoice" style="width:auto;">
+      Use high-quality AI voice (Google, adds ~1-2s delay)
+    </label>
     <button id="saveKey">Save and start</button>
   </div>
 
@@ -284,15 +288,20 @@ function checkSetup(){
     setupEl.classList.remove('hidden');
   }
 }
+const useAiVoiceCheckbox = document.getElementById('useAiVoice');
+useAiVoiceCheckbox.checked = localStorage.getItem('useAiVoice') === 'true';
+
 saveKeyBtn.addEventListener('click', () => {
   const val = keyInput.value.trim();
   if(!val){ return; }
   apiKey = val;
   localStorage.setItem('geminiApiKey', apiKey);
+  localStorage.setItem('useAiVoice', useAiVoiceCheckbox.checked);
   checkSetup();
 });
 settingsBtn.addEventListener('click', () => {
   keyInput.value = apiKey || '';
+  useAiVoiceCheckbox.checked = localStorage.getItem('useAiVoice') === 'true';
   setupEl.classList.remove('hidden');
 });
 
@@ -378,6 +387,7 @@ function unlockAudio(){
 
 micBtn.addEventListener('click', () => {
   unlockAudio(); // must happen directly inside the tap, before anything async
+  unlockAudioElement();
   if(!apiKey){ checkSetup(); return; }
   if(!recognition){ return; }
   if(listening){
@@ -419,6 +429,7 @@ voiceSelect.addEventListener('change', () => {
 });
 testVoiceBtn.addEventListener('click', () => {
   localStorage.setItem('ttsVoiceURI', voiceSelect.value);
+  localStorage.setItem('useAiVoice', useAiVoiceCheckbox.checked);
   speak("Hello! This is what I'll sound like.");
 });
 
@@ -432,6 +443,81 @@ function getSelectedVoice(){
 }
 
 function speak(text){
+  const useAi = localStorage.getItem('useAiVoice') === 'true';
+  if(useAi && apiKey){
+    speakWithGemini(text).catch(() => speakBrowser(text));
+  } else {
+    speakBrowser(text);
+  }
+}
+
+// ---- High-quality AI voice via Gemini TTS ----
+let audioUnlockedEl = false;
+function unlockAudioElement(){
+  if(audioUnlockedEl) return;
+  const silent = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
+  silent.play().catch(()=>{});
+  audioUnlockedEl = true;
+}
+
+function pcmBase64ToWavBlob(base64Data, sampleRate){
+  const binary = atob(base64Data);
+  const len = binary.length;
+  const pcmBytes = new Uint8Array(len);
+  for(let i=0;i<len;i++) pcmBytes[i] = binary.charCodeAt(i);
+
+  const numChannels = 1, bitsPerSample = 16;
+  const blockAlign = numChannels * bitsPerSample/8;
+  const byteRate = sampleRate * blockAlign;
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+  const writeStr = (offset, str) => { for(let i=0;i<str.length;i++) view.setUint8(offset+i, str.charCodeAt(i)); };
+  writeStr(0,'RIFF'); view.setUint32(4, 36+len, true); writeStr(8,'WAVE');
+  writeStr(12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true);
+  view.setUint16(22,numChannels,true); view.setUint32(24,sampleRate,true);
+  view.setUint32(28,byteRate,true); view.setUint16(32,blockAlign,true); view.setUint16(34,bitsPerSample,true);
+  writeStr(36,'data'); view.setUint32(40,len,true);
+
+  const wavBytes = new Uint8Array(header.byteLength + len);
+  wavBytes.set(new Uint8Array(header), 0);
+  wavBytes.set(pcmBytes, header.byteLength);
+  return new Blob([wavBytes], {type:'audio/wav'});
+}
+
+async function speakWithGemini(text){
+  statusEl.textContent = '🔊 Preparing voice…';
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent?key=${apiKey}`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({
+      contents:[{ parts:[{ text: text }] }],
+      generationConfig:{
+        responseModalities:['AUDIO'],
+        speechConfig:{
+          voiceConfig:{ prebuiltVoiceConfig:{ voiceName:'Puck' } },
+          languageCode:'en-GB'
+        }
+      }
+    })
+  });
+  const data = await res.json();
+  const part = data?.candidates?.[0]?.content?.parts?.[0];
+  if(!part?.inlineData?.data){ throw new Error('no audio returned'); }
+
+  let sampleRate = 24000;
+  const mime = part.inlineData.mimeType || '';
+  const rateMatch = mime.match(/rate=(\d+)/);
+  if(rateMatch) sampleRate = parseInt(rateMatch[1], 10);
+
+  const blob = pcmBase64ToWavBlob(part.inlineData.data, sampleRate);
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  statusEl.textContent = '🔊 Speaking…';
+  audio.onended = () => { statusEl.textContent = ''; URL.revokeObjectURL(url); };
+  await audio.play();
+}
+
+function speakBrowser(text){
   if(!window.speechSynthesis){
     addBubble('(This browser has no text-to-speech support.)', 'system');
     return;
