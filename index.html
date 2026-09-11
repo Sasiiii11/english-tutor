@@ -428,6 +428,8 @@ voiceSelect.addEventListener('change', () => {
   localStorage.setItem('ttsVoiceURI', voiceSelect.value);
 });
 testVoiceBtn.addEventListener('click', () => {
+  unlockAudio();
+  unlockAudioElement();
   localStorage.setItem('ttsVoiceURI', voiceSelect.value);
   localStorage.setItem('useAiVoice', useAiVoiceCheckbox.checked);
   speak("Hello! This is what I'll sound like.");
@@ -445,7 +447,10 @@ function getSelectedVoice(){
 function speak(text){
   const useAi = localStorage.getItem('useAiVoice') === 'true';
   if(useAi && apiKey){
-    speakWithGemini(text).catch(() => speakBrowser(text));
+    speakWithGemini(text).catch((err) => {
+      addBubble('AI voice unavailable (' + err.message + ') — using standard voice instead.', 'system');
+      speakBrowser(text);
+    });
   } else {
     speakBrowser(text);
   }
