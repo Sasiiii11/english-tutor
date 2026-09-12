@@ -495,10 +495,9 @@ async function speakWithKokoro(text){
       statusEl.textContent = '🔊 Downloading natural voice (one-time, ~100MB)…';
       kokoroLoading = (async () => {
         const { KokoroTTS } = await import('https://esm.sh/kokoro-js');
-        const device = ('gpu' in navigator) ? 'webgpu' : 'wasm';
         const tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
-          dtype: 'q8',
-          device: device
+          dtype: 'q4',
+          device: 'wasm'
         });
         kokoroInstance = tts;
         return tts;
