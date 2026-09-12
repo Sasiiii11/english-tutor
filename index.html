@@ -492,7 +492,7 @@ function pcmBase64ToWavBlob(base64Data, sampleRate){
 async function speakWithKokoro(text){
   if(!kokoroInstance){
     if(!kokoroLoading){
-      statusEl.textContent = '🔊 Downloading natural voice (one-time, ~100MB)…';
+      statusEl.textContent = '🔊 Downloading natural voice (one-time, ~50MB)…';
       kokoroLoading = (async () => {
         const { KokoroTTS } = await import('https://esm.sh/kokoro-js');
         const tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
